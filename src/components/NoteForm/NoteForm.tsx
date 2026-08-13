@@ -1,5 +1,7 @@
 import { ErrorMessage, Field, Form, Formik, type FormikHelpers } from 'formik';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Yup from 'yup';
+import { createNote } from '../../services/noteService';
 import type { NewNote, NoteTag } from '../../types/note';
 import css from './NoteForm.module.css';
 
@@ -23,18 +25,28 @@ const validationSchema = Yup.object({
 });
 
 interface NoteFormProps {
-  onSubmit: (note: NewNote) => Promise<void>;
   onCancel: () => void;
 }
 
-export default function NoteForm({ onSubmit, onCancel }: NoteFormProps) {
+export default function NoteForm({ onCancel }: NoteFormProps) {
+  const queryClient = useQueryClient();
+  const createMutation = useMutation({
+    mutationFn: createNote,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['notes'] });
+    },
+  });
+
   const handleSubmit = async (
     values: NewNote,
     actions: FormikHelpers<NewNote>,
   ) => {
     try {
-      await onSubmit(values);
+      await createMutation.mutateAsync(values);
       actions.resetForm();
+      onCancel();
+    } catch {
+      // The mutation error is displayed below the form.
     } finally {
       actions.setSubmitting(false);
     }
@@ -93,11 +105,18 @@ export default function NoteForm({ onSubmit, onCancel }: NoteFormProps) {
             <button
               type="submit"
               className={css.submitButton}
-              disabled={isSubmitting}
+              disabled={isSubmitting || createMutation.isPending}
             >
-              {isSubmitting ? 'Creating...' : 'Create note'}
+              {isSubmitting || createMutation.isPending
+                ? 'Creating...'
+                : 'Create note'}
             </button>
           </div>
+          {createMutation.isError && (
+            <p role="alert" className={css.error}>
+              Unable to create the note. Please try again.
+            </p>
+          )}
         </Form>
       )}
     </Formik>
